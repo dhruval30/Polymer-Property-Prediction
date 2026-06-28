@@ -1,0 +1,132 @@
+{
+  "run_name": "exp_gbm_cocktail",
+  "seed": 42,
+  "n_folds": 5,
+  "n_quantile_bins": 10,
+  "feature_count": 8428,
+  "target_transforms": {
+    "tg": "identity",
+    "egc": "log1p"
+  },
+  "models": [
+    "lgb",
+    "cat",
+    "hgb"
+  ],
+  "lgb_params": {
+    "n_estimators": 4000,
+    "learning_rate": 0.03,
+    "num_leaves": 63,
+    "min_child_samples": 10,
+    "feature_fraction": 0.5,
+    "bagging_fraction": 0.85,
+    "bagging_freq": 5,
+    "reg_lambda": 1.0,
+    "objective": "regression",
+    "metric": "rmse",
+    "verbosity": -1,
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "cat_params": {
+    "iterations": 4000,
+    "depth": 8,
+    "learning_rate": 0.03,
+    "l2_leaf_reg": 3.0,
+    "grow_policy": "SymmetricTree",
+    "random_seed": 42,
+    "verbose": false,
+    "allow_writing_files": false
+  },
+  "hgb_params": {
+    "max_iter": 1000,
+    "learning_rate": 0.05,
+    "max_leaf_nodes": 63,
+    "min_samples_leaf": 20,
+    "l2_regularization": 1.0,
+    "early_stopping": true,
+    "validation_fraction": 0.1,
+    "n_iter_no_change": 30,
+    "random_state": 42
+  },
+  "per_target": {
+    "tg": {
+      "per_model_oof_r2": {
+        "lgb": 0.8999958946904062,
+        "cat": 0.9017888940321847,
+        "hgb": 0.8890514263845952
+      },
+      "blend_oof_r2": 0.9018162446191093,
+      "median_best_iters": {
+        "lgb": 1153,
+        "cat": 3986,
+        "hgb": 320
+      },
+      "fold_best_iters": {
+        "lgb": [
+          1153,
+          959,
+          1405,
+          1970,
+          1099
+        ],
+        "cat": [
+          3986,
+          3990,
+          3983,
+          3976,
+          3996
+        ],
+        "hgb": [
+          346,
+          224,
+          246,
+          320,
+          482
+        ]
+      },
+      "n_train": 4143,
+      "n_test": 2763
+    },
+    "egc": {
+      "per_model_oof_r2": {
+        "lgb": 0.9027249402209122,
+        "cat": 0.9062372071918774,
+        "hgb": 0.8924982865730597
+      },
+      "blend_oof_r2": 0.909184154559539,
+      "median_best_iters": {
+        "lgb": 944,
+        "cat": 2032,
+        "hgb": 268
+      },
+      "fold_best_iters": {
+        "lgb": [
+          1463,
+          944,
+          416,
+          729,
+          981
+        ],
+        "cat": [
+          1984,
+          2566,
+          3713,
+          2032,
+          2000
+        ],
+        "hgb": [
+          283,
+          353,
+          268,
+          172,
+          113
+        ]
+      },
+      "n_train": 2028,
+      "n_test": 1352
+    }
+  },
+  "mean_blend_oof_r2": 0.9055001995893242,
+  "runtime_sec": 6337.7
+}

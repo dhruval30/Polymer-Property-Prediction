@@ -226,3 +226,239 @@ def cv_oof(
         )
         fold_iter.set_postfix(R2=f"{r2:.4f}")
     return oof, fold_scores, float(r2_score(y, oof))
+
+
+# ---------------------------------------------------------------------------
+# Modular feature layers (Phase 1 cocktail)
+# ---------------------------------------------------------------------------
+
+def _cache_path(category: str, smiles_list: list[str], extra: tuple = ()) -> Path:
+    h = hashlib.sha256()
+    h.update(category.encode())
+    h.update(repr(extra).encode())
+    h.update(b"\n".join(s.encode() for s in smiles_list))
+    return CACHE_DIR / f"{category}_{h.hexdigest()[:16]}.pkl.gz"
+
+
+def _cached_compute(category: str, smiles_list: list[str], compute_fn, *,
+                    extra: tuple = (), desc: str = "") -> pd.DataFrame:
+    path = _cache_path(category, smiles_list, extra)
+    label = desc or category
+    if path.exists():
+        log.info("[%s] cache hit: %s", label, path.name)
+        return _load_pickle(path)
+    df = compute_fn()
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    _save_pickle(df, path)
+    log.info("[%s] cached → %s (%.1f MB)", label, path.name, path.stat().st_size / 1e6)
+    return df
+
+
+def _smiles_to_mols(smiles_list: list[str], desc: str) -> list:
+    mols = []
+    n_failed = 0
+    for smi in tqdm(smiles_list, desc=f"{desc} parse", unit="mol", leave=False):
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            n_failed += 1
+        mols.append(mol)
+    if n_failed:
+        log.warning("[%s] %d / %d SMILES failed to parse", desc, n_failed, len(smiles_list))
+    return mols
+
+
+def compute_rdkit_descriptors(smiles_list: list[str], *, desc: str = "rdk-desc") -> pd.DataFrame:
+    def _go() -> pd.DataFrame:
+        mols = _smiles_to_mols(smiles_list, desc)
+        keys = list(Descriptors.CalcMolDescriptors(Chem.MolFromSmiles("CCO")).keys())
+        nan = {k: np.nan for k in keys}
+        rows = []
+        for mol in tqdm(mols, desc=f"{desc} compute", unit="mol", leave=False):
+            if mol is None:
+                rows.append(dict(nan)); continue
+            try:
+                rows.append(Descriptors.CalcMolDescriptors(mol))
+            except Exception:
+                rows.append(dict(nan))
+        return pd.DataFrame(rows, columns=keys).add_prefix("rdk_")
+    return _cached_compute("rdk_desc_v1", smiles_list, _go, desc=desc)
+
+
+def compute_morgan_fp(smiles_list: list[str], *, radius: int = 2, n_bits: int = 2048,
+                      count: bool = False, desc: str | None = None) -> pd.DataFrame:
+    from rdkit.Chem import rdFingerprintGenerator
+    label = desc or f"morgan{radius}-{'cnt' if count else 'bit'}-{n_bits}"
+    def _go() -> pd.DataFrame:
+        mols = _smiles_to_mols(smiles_list, label)
+        gen = rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=n_bits)
+        dtype = np.int16 if count else np.int8
+        arr = np.zeros((len(mols), n_bits), dtype=dtype)
+        for i, mol in enumerate(tqdm(mols, desc=f"{label} compute", unit="mol", leave=False)):
+            if mol is None:
+                continue
+            if count:
+                arr[i] = gen.GetCountFingerprintAsNumPy(mol)
+            else:
+                arr[i] = gen.GetFingerprintAsNumPy(mol)
+        prefix = f"m{radius}{'c' if count else 'b'}"
+        return pd.DataFrame(arr, columns=[f"{prefix}_{j}" for j in range(n_bits)])
+    return _cached_compute(
+        f"morgan_r{radius}_{'cnt' if count else 'bit'}_{n_bits}_v1",
+        smiles_list, _go, desc=label,
+    )
+
+
+def compute_maccs(smiles_list: list[str], *, desc: str = "maccs") -> pd.DataFrame:
+    from rdkit.Chem import MACCSkeys
+    def _go() -> pd.DataFrame:
+        mols = _smiles_to_mols(smiles_list, desc)
+        n_bits = 167
+        arr = np.zeros((len(mols), n_bits), dtype=np.int8)
+        for i, mol in enumerate(tqdm(mols, desc=f"{desc} compute", unit="mol", leave=False)):
+            if mol is None:
+                continue
+            ConvertToNumpyArray(MACCSkeys.GenMACCSKeys(mol), arr[i])
+        return pd.DataFrame(arr, columns=[f"maccs_{j}" for j in range(n_bits)])
+    return _cached_compute("maccs_v1", smiles_list, _go, desc=desc)
+
+
+def compute_avalon_fp(smiles_list: list[str], *, n_bits: int = 512,
+                      desc: str = "avalon") -> pd.DataFrame:
+    from rdkit.Avalon.pyAvalonTools import GetAvalonFP
+    def _go() -> pd.DataFrame:
+        mols = _smiles_to_mols(smiles_list, desc)
+        arr = np.zeros((len(mols), n_bits), dtype=np.int8)
+        for i, mol in enumerate(tqdm(mols, desc=f"{desc} compute", unit="mol", leave=False)):
+            if mol is None:
+                continue
+            ConvertToNumpyArray(GetAvalonFP(mol, nBits=n_bits), arr[i])
+        return pd.DataFrame(arr, columns=[f"avlon_{j}" for j in range(n_bits)])
+    return _cached_compute(f"avalon_{n_bits}_v1", smiles_list, _go, desc=desc,
+                            extra=(n_bits,))
+
+
+def compute_atom_pair_fp(smiles_list: list[str], *, n_bits: int = 2048,
+                          count: bool = True, desc: str | None = None) -> pd.DataFrame:
+    from rdkit.Chem import rdFingerprintGenerator
+    label = desc or f"atompair-{'cnt' if count else 'bit'}-{n_bits}"
+    def _go() -> pd.DataFrame:
+        mols = _smiles_to_mols(smiles_list, label)
+        gen = rdFingerprintGenerator.GetAtomPairGenerator(fpSize=n_bits)
+        dtype = np.int16 if count else np.int8
+        arr = np.zeros((len(mols), n_bits), dtype=dtype)
+        for i, mol in enumerate(tqdm(mols, desc=f"{label} compute", unit="mol", leave=False)):
+            if mol is None:
+                continue
+            if count:
+                arr[i] = gen.GetCountFingerprintAsNumPy(mol)
+            else:
+                arr[i] = gen.GetFingerprintAsNumPy(mol)
+        prefix = f"ap{'c' if count else 'b'}"
+        return pd.DataFrame(arr, columns=[f"{prefix}_{j}" for j in range(n_bits)])
+    return _cached_compute(
+        f"atom_pair_{'cnt' if count else 'bit'}_{n_bits}_v1",
+        smiles_list, _go, desc=label,
+    )
+
+
+def compute_topological_torsion_fp(smiles_list: list[str], *, n_bits: int = 2048,
+                                    count: bool = True, desc: str | None = None) -> pd.DataFrame:
+    from rdkit.Chem import rdFingerprintGenerator
+    label = desc or f"torsion-{'cnt' if count else 'bit'}-{n_bits}"
+    def _go() -> pd.DataFrame:
+        mols = _smiles_to_mols(smiles_list, label)
+        gen = rdFingerprintGenerator.GetTopologicalTorsionGenerator(fpSize=n_bits)
+        dtype = np.int16 if count else np.int8
+        arr = np.zeros((len(mols), n_bits), dtype=dtype)
+        for i, mol in enumerate(tqdm(mols, desc=f"{label} compute", unit="mol", leave=False)):
+            if mol is None:
+                continue
+            if count:
+                arr[i] = gen.GetCountFingerprintAsNumPy(mol)
+            else:
+                arr[i] = gen.GetFingerprintAsNumPy(mol)
+        prefix = f"tt{'c' if count else 'b'}"
+        return pd.DataFrame(arr, columns=[f"{prefix}_{j}" for j in range(n_bits)])
+    return _cached_compute(
+        f"torsion_{'cnt' if count else 'bit'}_{n_bits}_v1",
+        smiles_list, _go, desc=label,
+    )
+
+
+def compute_mordred_descriptors(smiles_list: list[str], *, ignore_3d: bool = True,
+                                 nproc: int = 1, desc: str = "mordred") -> pd.DataFrame:
+    """Mordred 2D descriptors (~1600 features). Empty DataFrame if mordred not installed."""
+    try:
+        from mordred import Calculator, descriptors  # type: ignore
+    except ImportError:
+        log.warning("[%s] mordred not installed → skipping (pip install mordred)", desc)
+        return pd.DataFrame(index=range(len(smiles_list)))
+
+    def _go() -> pd.DataFrame:
+        mols = _smiles_to_mols(smiles_list, desc)
+        # Mordred needs valid Mol objects; substitute methane for failed parses
+        fallback = Chem.MolFromSmiles("C")
+        safe_mols = [m if m is not None else fallback for m in mols]
+        log.info("[%s] running Mordred (this takes ~15-25 min on 6k mols)...", desc)
+        calc = Calculator(descriptors, ignore_3D=ignore_3d)
+        df = calc.pandas(safe_mols, quiet=True, nproc=nproc)
+        df = df.apply(pd.to_numeric, errors="coerce")
+        return df.add_prefix("mord_")
+    return _cached_compute(
+        "mordred_2d_v1" if ignore_3d else "mordred_3d_v1",
+        smiles_list, _go, desc=desc, extra=(ignore_3d,),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Column hygiene
+# ---------------------------------------------------------------------------
+
+def sanitize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace non-alphanumeric chars in column names (LightGBM-safe)."""
+    import re
+    df = df.copy()
+    df.columns = [re.sub(r"[^A-Za-z0-9_]+", "_", str(c)) for c in df.columns]
+    # de-dupe collisions
+    if df.columns.duplicated().any():
+        new_cols = []
+        seen: dict[str, int] = {}
+        for c in df.columns:
+            if c in seen:
+                seen[c] += 1
+                new_cols.append(f"{c}__{seen[c]}")
+            else:
+                seen[c] = 0
+                new_cols.append(c)
+        df.columns = new_cols
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Stratified CV + target transforms
+# ---------------------------------------------------------------------------
+
+def stratified_quantile_split(
+    y: np.ndarray, *, n_folds: int = 5, n_bins: int = 10, seed: int = 42,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """KFold splits over quantile bins of a continuous target."""
+    from sklearn.model_selection import StratifiedKFold
+    y = np.asarray(y)
+    n_bins_eff = min(n_bins, max(2, len(np.unique(y))))
+    try:
+        bins = pd.qcut(y, q=n_bins_eff, labels=False, duplicates="drop")
+    except ValueError:
+        bins = pd.cut(y, bins=n_bins_eff, labels=False, include_lowest=True)
+    bins = np.asarray(bins)
+    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    return list(skf.split(np.zeros((len(y), 1)), bins))
+
+
+def transform_target(y, kind: str) -> tuple[np.ndarray, Callable[[np.ndarray], np.ndarray]]:
+    """Return (y_transformed, inverse_fn) for target preprocessing."""
+    y = np.asarray(y, dtype=np.float64)
+    if kind == "log1p":
+        return np.log1p(y), np.expm1
+    if kind == "identity":
+        return y, (lambda x: x)
+    raise ValueError(f"unknown target transform: {kind!r}")
