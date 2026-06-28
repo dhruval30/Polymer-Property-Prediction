@@ -1,0 +1,46 @@
+{
+  "tag": "baseline",
+  "n_folds": 5,
+  "feature_count": 2234,
+  "morgan_radius": 2,
+  "morgan_bits": 2048,
+  "hgb_params": {
+    "max_iter": 1000,
+    "learning_rate": 0.05,
+    "max_leaf_nodes": 63,
+    "min_samples_leaf": 20,
+    "l2_regularization": 1.0,
+    "early_stopping": true,
+    "validation_fraction": 0.1,
+    "n_iter_no_change": 30,
+    "random_state": 42
+  },
+  "per_target": {
+    "tg": {
+      "oof_r2": 0.8761099611304508,
+      "fold_r2": [
+        0.8715643329549003,
+        0.8895213587054256,
+        0.8753969313142154,
+        0.8866951677003712,
+        0.8579808485469327
+      ],
+      "n_train": 4143,
+      "n_test": 2763
+    },
+    "egc": {
+      "oof_r2": 0.8772504585143561,
+      "fold_r2": [
+        0.8415064861012378,
+        0.8698427111563967,
+        0.8905048967494006,
+        0.8846034895342856,
+        0.902968896599561
+      ],
+      "n_train": 2028,
+      "n_test": 1352
+    }
+  },
+  "mean_r2": 0.8766802098224035,
+  "runtime_sec": 1151.3
+}
