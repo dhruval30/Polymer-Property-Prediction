@@ -462,3 +462,57 @@ def transform_target(y, kind: str) -> tuple[np.ndarray, Callable[[np.ndarray], n
     if kind == "identity":
         return y, (lambda x: x)
     raise ValueError(f"unknown target transform: {kind!r}")
+
+
+# ---------------------------------------------------------------------------
+# Polymer-aware SMILES transformations
+# ---------------------------------------------------------------------------
+
+def cap_polymer_smiles_list(smiles_list: list[str], *, cap_atomic_num: int = 6) -> list[str]:
+    """Replace each polymer wildcard atom (`*`) with a real atom (default carbon).
+
+    This converts a polymer-style SMILES (`*CCCC*`) into a capped, fully-defined
+    molecule (`CCCCCC`). Many RDKit descriptors handle wildcards as a degenerate
+    dummy atom; replacing with real atoms gives the model meaningful descriptor
+    signal in those slots. Falls back to the original SMILES on parse failure.
+    """
+    capped: list[str] = []
+    n_changed = 0
+    for smi in smiles_list:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            capped.append(smi)
+            continue
+        rw = Chem.RWMol(mol)
+        touched = False
+        for atom in rw.GetAtoms():
+            if atom.GetAtomicNum() == 0:
+                atom.SetAtomicNum(cap_atomic_num)
+                touched = True
+        if not touched:
+            capped.append(smi)
+            continue
+        try:
+            m = rw.GetMol()
+            Chem.SanitizeMol(m)
+            capped.append(Chem.MolToSmiles(m))
+            n_changed += 1
+        except Exception:
+            capped.append(smi)
+    log.info("cap_polymer_smiles_list: %d / %d SMILES had wildcards replaced",
+             n_changed, len(smiles_list))
+    return capped
+
+
+# ---------------------------------------------------------------------------
+# MPS / CUDA / CPU device selection (for PyTorch experiments)
+# ---------------------------------------------------------------------------
+
+def torch_device():
+    """Return the best available torch device: MPS > CUDA > CPU."""
+    import torch
+    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
