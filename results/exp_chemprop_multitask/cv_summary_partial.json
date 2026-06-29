@@ -1,0 +1,53 @@
+{
+  "run_name": "exp_chemprop_multitask",
+  "mode": "partial_finish",
+  "checkpoint_completed_folds": 2,
+  "checkpoint_n_models": 6,
+  "chemprop_oof_rows": 2464,
+  "chemprop_oof_pct": 0.4001299123091913,
+  "chemprop_partial_oof_r2": {
+    "tg": 0.9033272156193205,
+    "egc": 0.8990899456134044
+  },
+  "per_target": {
+    "tg": {
+      "stack_type": "phase1+chemprop",
+      "weights_normalized": {
+        "phase1": 0.5032136172520681,
+        "chemprop": 0.4967863827479319
+      },
+      "weights_raw": {
+        "phase1": 0.499523616281103,
+        "chemprop": 0.4931435118639672
+      },
+      "per_base_subset_r2": {
+        "phase1_full_r2": 0.9018162446191093,
+        "phase1_subset_r2": 0.9047083826699629,
+        "chemprop_subset_r2": 0.903416212434329
+      },
+      "stack_oof_r2_subset": 0.9136124621837344,
+      "n_rows_used_for_nnls": 1665,
+      "n_rows_total": 4143
+    },
+    "egc": {
+      "stack_type": "phase1+chemprop",
+      "weights_normalized": {
+        "phase1": 0.5175532619284808,
+        "chemprop": 0.4824467380715191
+      },
+      "weights_raw": {
+        "phase1": 0.5207340334882992,
+        "chemprop": 0.4854117524506519
+      },
+      "per_base_subset_r2": {
+        "phase1_full_r2": 0.909184154559539,
+        "phase1_subset_r2": 0.9004274607851684,
+        "chemprop_subset_r2": 0.8990899456134044
+      },
+      "stack_oof_r2_subset": 0.9145377861730789,
+      "n_rows_used_for_nnls": 805,
+      "n_rows_total": 2028
+    }
+  },
+  "runtime_sec": 0.3
+}
