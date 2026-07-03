@@ -1,0 +1,22 @@
+{
+  "chemprop_meta": {
+    "completed_folds": 2,
+    "n_models": 6
+  },
+  "per_target": {
+    "tg": {
+      "weights_normalized": {
+        "phase1": 0.5032136172520681,
+        "chemprop": 0.49678638274793185
+      },
+      "n_rows_used_for_nnls": 1665
+    },
+    "egc": {
+      "weights_normalized": {
+        "phase1": 0.5175532619284802,
+        "chemprop": 0.4824467380715197
+      },
+      "n_rows_used_for_nnls": 805
+    }
+  }
+}
